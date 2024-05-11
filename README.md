@@ -2,7 +2,7 @@
 
 # Solution Overview
 
-![AWS_NAT](./images/aws_nat_sphere.png)
+![AWS_NAT](./images/aws_nat_vpc_diagram.png)
 
 I put this simple terraform project together because I wanted an easy to manage NAT instance that I could use to connect my home network securely to my AWS VPC. This enables me to access workloads across my AWS accounts for things such as Ai and Internet of Things (IoT) projects.
 
