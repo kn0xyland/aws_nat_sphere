@@ -4,17 +4,31 @@
 
 ![AWS_NAT](./images/aws_nat_vpc_diagram.png)
 
-I put this simple terraform project together because I wanted an easy to manage NAT instance that I could use to connect my home network securely to my AWS VPC. This enables me to access workloads across my AWS accounts for things such as Ai and Internet of Things (IoT) projects.
+I put this simple terraform project together because I wanted an easy to manage NAT instance that I could use to connect my home network securely to my AWS VPC. This enables me to access workloads across my AWS accounts for things such as Ai and Internet of Things (IoT) projects and have them accessible via my home LAN. 
 
-I also wanted to manage the whole deployment using infrastructure code (Terraform) and version control through github, and.. after a few too many wines went down the rabbit hole of automating my deploy using AWS CodePipline and AWS CodeBuild because I could. (I will add this to my project soon)
+Using AWS's super cheap Gravitron instances I can keep costs very low whilst having an instance that can perform multiple functions, such as running Docker containers as well as being a NAT/WireGuard router. To keep things simple though, I will leave that to your good judgement on how you want to use this instance beyond being a router. 
 
-At a high level, the terraform deploys an EC2 instance along with an AWS VPC with 3 availability zones. The instance is configured to act as a NAT Instance for the private subnets in the VPC. The instance is also configured to act as a WireGuard VPN concentrator, allowing clients to connect to the VPC from anywhere in the world as well as attaching my home LAN network. 
+Being a good boy, all of this is done using infrastructure code (Terraform) and version control through github, and.. after a few too many wines went down the rabbit hole of automating my deploy using AWS CodePipline and AWS CodeBuild because I could. (I will add this to my project soon)
+
+At a high level, the terraform deploys an EC2 instance along with an AWS VPC with 3 availability zones. The instance is configured to act as a NAT Instance for the private subnets in the VPC. The instance is also configured to act as a WireGuard VPN concentrator, allowing clients to connect to the VPC from anywhere in the world, as well as attaching my home LAN network for LAN access.
+
+The Bootstrap does the following things:
+
+* Installs packages from Apt and Installs the AWS CLi
+* Configures Linux to enable IP Forwarding
+* Disables EC2 'Source Destination Check' 
+* Updates the VPC's private route tables and sets default routes to the NAT Instance
+* Wireguard Configuration (Server and Client Configuration Generation)
+* Sets the Hostname and Route53 A Record to the public IP of the EC2 Instance
+* Raises shields and applies an IPTables Firewall ruleset in addition to the EC2's Security Group
 
 The bootstrap will generate the wireguard encryption keys for both the client and the server and build both configuration files. The server end is built and stored under /etc/wireguard/wg0.conf and activated. The client end config is built and stored under /home/admin/wg0-client.conf, copy this file to your client end point. NOTE: These keys are generated on boot and are not stored outside of the instance, consider backing up the keys if you need to rebuild the instance.
 
-The bootstrap also reconfigures the EC2 to disable Source/Destination checking, this enables the EC2 to act as a router. Private route tables are configured with a default route 0.0.0.0/0 which points to the EC2 instance. Security group rules are appplied to permit the private subnets access to the NAT Instance as well rules for WireGuard and SSH access. 
+Please also note that the security group rules are configrued to use your home routers public IPv4 address which you define inside the terraform.tfvars file under parameter MYIP. This locks down access to SSH and Wireguard ingress from your IP :) you're welcome 
 
-Please note that the security group rules are configrued to use your home routers public IPv4 address which you define inside the terraform.tfvars file under parameter MYIP for SSH and Wireguard ingress.
+A note on the use of autoscaling, I decided to opt for an Autoscale group for this solution to take advantage of its ability to self recover in the event of an AZ failure, or if the node stops responding, AWS will deploy a new instance and the bootstrap will largely self heal itself back into existance.  
+
+NOTE: WireGuard configuration will regenerate keys, ensure you backup your configs to manually restore the wireguard service - todo Use SSM Parameter Store to store the WireGuard configuration file & add logic to auto detect/restore from SSM if node redeploys.
 
 # TFVARS Explained:
 
@@ -58,6 +72,7 @@ Please note that the security group rules are configrued to use your home router
 # Usage Instructions:
 
 1. Clone Repo
+2. Ensure s3 bucket has been created to store your terraform state (set in versions.tf)
 2. Update the terraform.tfvars file with your customisations
 3. Run Terraform Plan and Apply
 4. WireGuard Client Configuration available under /home/admin/wg0-client.conf

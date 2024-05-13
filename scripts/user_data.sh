@@ -118,7 +118,7 @@ Endpoint = [FQDN]:51820
 PersistentKeepalive = 25
 EOF
 
-## Get WG0 Config from SSM Parameter Store todo: may delete this
+## Get WG0 Config from SSM Parameter Store todo: build logic to self recover from SSM
 #CONFIG=`/usr/local/bin/aws ssm get-parameter --name /${NAME_PREFIX}/wireguardconfig --query 'Parameter.Value' --with-decryption --output text`
 
 # Inject into /etc/wireguard/wg0.conf
@@ -133,16 +133,16 @@ sed -i "s|\[PRIVATEKEY\]|$PRIVATEKEY|g" /etc/wireguard/wg0.conf
 sed -i "s|\[PEER_PUB_KEY\]|$PUBLICKEY|g" /etc/wireguard/wg0.conf
 sed -i "s|\[PRE_SHARED_KEY\]|$PRESHAREDKEY|g" /etc/wireguard/wg0.conf
 
-NETWORK_ADDRESS=$(echo $WG0CIDR | cut -d'/' -f1)
-SUBNET_MASK=$(echo $WG0CIDR | cut -d'/' -f2)
+NETWORK_ADDRESS=$(echo ${WG0CIDR} | cut -d'/' -f1)
+SUBNET_MASK=$(echo ${WG0CIDR} | cut -d'/' -f2)
 
 FIRST_IP=$(echo $NETWORK_ADDRESS | awk -F. '{print $1"."$2"."$3"."$4+1}')
 SECOND_IP=$(echo $NETWORK_ADDRESS | awk -F. '{print $1"."$2"."$3"."$4+2}')
 
-sed -i "s|Address = .*|Address = $FIRST_IP/$SUBNET_MASK|" wg0.conf
-sed -i "s|AllowedIPs = .*|AllowedIPs = $SECOND_IP/$SUBNET_MASK|" wg0.conf
+sed -i "s|Address = .*|Address = $FIRST_IP/$SUBNET_MASK|" /etc/wireguard/wg0.conf
+sed -i "s|AllowedIPs = .*|AllowedIPs = $SECOND_IP/$SUBNET_MASK|" /etc/wireguard/wg0.conf
 
-# Replace values in wg-client.conf - Client Config located in /home/admin 
+# Replace values in wg0-client.conf - Client Config located in /home/admin 
 
 PRIVATEKEY=$(cat privatekey-client)
 PUBLICKEY=$(cat publickey-server)
@@ -163,7 +163,7 @@ echo "WireGuard Config Complete - Client config is available at /home/admin/wg0-
 echo "Consider backing up your WireGuard Configs to S3 or other secure location"
 echo "Sphere's Security Group is configured to allow connections from MYIP for security reasons. Update as needed."
 #todo: Once generated store in SSM Parameter store. Update script to restore config from SSM if present upon EC2 redeployment
-
+echo "### End of WireGuard Section"
 ## Enable and start WireGuard on Host 
 sudo systemctl enable wg-quick@wg0.service
 sudo systemctl daemon-reload
