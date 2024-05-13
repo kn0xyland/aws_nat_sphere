@@ -36,7 +36,7 @@ apt update
 ## Set timezone
 sudo timedatectl set-timezone ${TIMEZONE}
 
-## Force NAT routing and iptables masquerade on reboot (The above should do this - must fix)
+## Enable IP Forwarding
 sudo echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
 sudo echo "net.ipv4.conf.all.forwarding=1" >> /etc/sysctl.conf
 
