@@ -87,16 +87,16 @@ resource "aws_security_group" "sphere-sg" {
   ]
 }
 
-resource "aws_ssm_parameter" "sphere_parameter" {
-  name        = "/${var.name_prefix}/wireguardconfig"
-  description = "${var.name_prefix} wireguard wg0 conf"
-  type        = "SecureString"
-  value       = base64encode(file("${path.module}/wg0.conf"))
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
+#resource "aws_ssm_parameter" "sphere_parameter" {
+#  name        = "/${var.name_prefix}/wireguardconfig"
+#  description = "${var.name_prefix} wireguard wg0 conf"
+#  type        = "SecureString"
+#  value       = base64encode(file("${path.module}/wg0.conf"))
+#
+#  lifecycle {
+#    create_before_destroy = true
+#  }
+#}
 
 module "ec2" {
   source = "./modules/ec2"
