@@ -1,5 +1,9 @@
 # Poor Technologists AWS NAT & WireGuard Cloud Network
 
+# BeardBench: Checkout the guide for this repo at:
+
+https://beardbench.isogen.io/posts/private_cloud_vpn_on_aws_part_1/index.html
+
 # Solution Overview
 
 ![AWS_NAT](./images/aws_nat_vpc_diagram.png)
