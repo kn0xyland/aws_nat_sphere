@@ -37,22 +37,30 @@ apt update
 sudo timedatectl set-timezone ${TIMEZONE}
 
 ## Enable IP Forwarding
+echo "Updating Kernel to allow IP Forwarding..."
+
 sudo echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
 sudo echo "net.ipv4.conf.all.forwarding=1" >> /etc/sysctl.conf
 
-## Install AWS CLi for ARM64
+## Install AWS CLi for ARM64 todo: check arch and then install - current ARM64
+echo "Install latest AWSCLi..."
 curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
 unzip -q awscliv2.zip
 sudo ./aws/install
 rm -rf awscliv2.zip
 
 ## Allow Sphere to disable its Source Dest Check via IAM role permissions on boot
+
+echo "Disabling EC2 Instance Source Dest Check to permit routing through Sphere instance..."
+
 EC2_INSTANCE_ID="`wget -q -O - http://169.254.169.254/latest/meta-data/instance-id`"
 /usr/local/bin/aws ec2 modify-instance-attribute --no-source-dest-check --instance-id $EC2_INSTANCE_ID --region ${AWSREGION}
 /usr/local/bin/aws ec2 create-tags --resources $EC2_INSTANCE_ID --tags Key=Name,Value=${NAME_PREFIX} --region ${AWSREGION}
 
 ## Discover private route tables
 PRIV_TABLES="`/usr/local/bin/aws ec2 describe-route-tables --filters 'Name=tag:Name,Values=${NAME_PREFIX}-private-route-table-${AWSREGION}' --query 'RouteTables[*].RouteTableId' --output text`"
+
+echo "Updating Private Route Tables with new default route to Sphere instance..."
 
 ## Check if 0.0.0.0/0 exists in private route tables and delete if present
 for table in $PRIV_TABLES; do
@@ -64,18 +72,20 @@ for table in $PRIV_TABLES; do
   fi
 done
 
-## Add new default route to new Sphere instance to enable Internet routing for private subnets
+## Add new default route to Sphere instance to enable NAT routing for private subnets
 for table in $PRIV_TABLES; do
   /usr/local/bin/aws ec2 create-route --route-table-id $table --destination-cidr-block "0.0.0.0/0" --instance-id $EC2_INSTANCE_ID; 
 done
 
-## Update Route53 A record for Sphere and update with new Public IP
+## Update Route53
+echo "Updating Route53 A record for ${FQDN} with new Public IP..."
+
 SPHERE_PUBIP="`wget -q -O - http://169.254.169.254/latest/meta-data/public-ipv4`"
 export SPHERE_PUBIP
 /usr/local/bin/aws route53 change-resource-record-sets --hosted-zone-id ${ZONEID} --change-batch '{"Comment":"Update record to reflect new IP address","Changes":[{"Action":"UPSERT","ResourceRecordSet":{"Name":"${FQDN}","Type":"A","TTL":300,"ResourceRecords":[{"Value":"'$SPHERE_PUBIP'"}]} }]}'
 
 ## WireGuard Setup and Config
-echo "Generating WireGuard Public and Private keys for server and client"
+echo "Generating WireGuard Public and Private keys.."
 cd /etc/wireguard
 umask 077
 # Generate Server Side Keys
@@ -118,12 +128,6 @@ Endpoint = [FQDN]:51820
 PersistentKeepalive = 25
 EOF
 
-## Get WG0 Config from SSM Parameter Store todo: build logic to self recover from SSM
-#CONFIG=`/usr/local/bin/aws ssm get-parameter --name /${NAME_PREFIX}/wireguardconfig --query 'Parameter.Value' --with-decryption --output text`
-
-# Inject into /etc/wireguard/wg0.conf
-#echo $CONFIG | base64 -d > /etc/wireguard/wg0.conf
-
 # Replace values in wg0.conf - Server Config
 PRIVATEKEY=$(cat privatekey-server)
 PUBLICKEY=$(cat publickey-client)
@@ -159,22 +163,43 @@ sed -i "s|Address = .*|Address = $SECOND_IP/$SUBNET_MASK|" /home/admin/wg0-clien
 chown -R root:root /etc/wireguard/
 chmod -R 770 /etc/wireguard/
 
-echo "WireGuard Config Complete - Client config is available at /home/admin/wg0-client.conf"
-echo "Consider backing up your WireGuard Configs to S3 or other secure location"
-echo "Sphere's Security Group is configured to allow connections from MYIP for security reasons. Update as needed."
-#todo: Once generated store in SSM Parameter store. Update script to restore config from SSM if present upon EC2 redeployment
-echo "### End of WireGuard Section"
+echo "WireGuard Config Complete - Client config is available at /home/admin/wg0-client.conf..."
+
+# Define variables
+CONFIG_FILE_PATH="/etc/wireguard/wg0.conf"
+ENCODED_CONFIG=$(base64 -w 0 "$CONFIG_FILE_PATH")
+FULL_PARAMETER_NAME="/${NAME_PREFIX}/wg0"
+
+# Check AWS SSM Parameter Store for existing parameter
+if ! /usr/local/bin/aws ssm get-parameter --name "$FULL_PARAMETER_NAME" >/dev/null 2>&1; then
+  # If the parameter does not exist, create it
+  /usr/local/bin/aws ssm put-parameter --name "$FULL_PARAMETER_NAME" --value "$ENCODED_CONFIG" --type SecureString --overwrite
+else
+  # If the parameter already exists, restore the configuration file wg0
+  echo "SSM parameter $FULL_PARAMETER_NAME already exists. Assume recovery & restore to $CONFIG_FILE_PATH"
+  # Inject into /etc/wireguard/wg0.conf
+  RESTORE_CONFIG=`/usr/local/bin/aws ssm get-parameter --name "/${NAME_PREFIX}/wg0" --query 'Parameter.Value' --with-decryption --output text`
+  rm -rf /etc/wireguard/p*
+  echo $RESTORE_CONFIG | base64 -d > $CONFIG_FILE_PATH
+fi
+
 ## Enable and start WireGuard on Host 
 sudo systemctl enable wg-quick@wg0.service
 sudo systemctl daemon-reload
 sudo systemctl start wg-quick@wg0
 
+echo "End of WireGuard Section..."
+
 ## Set Hostname and add to /etc/hosts
+echo "Setting Hostname to ${FQDN}..."
+
 hostnamectl set-hostname ${FQDN}
 echo "$SPHERE_PUBIP ${FQDN}" | sudo tee -a /etc/hosts
 hostnamectl set-hostname "${NAME_PREFIX}" --pretty
 
 ## Raise Shields -- Iptables rules
+echo "Enabling basic iptabes firewall ruleset for IPv4..."
+
 sudo iptables -A INPUT -i lo -j ACCEPT
 sudo iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
 sudo iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
@@ -185,12 +210,12 @@ sudo iptables -A INPUT -p udp -m udp --dport 51820 -j ACCEPT
 sudo iptables -A INPUT -j LOG --log-prefix "Dropped: " --log-level 7
 sudo iptables -A INPUT -j DROP
 sudo iptables -t nat -A POSTROUTING -o ens5 -s ${CIDR} -j MASQUERADE
-#sudo iptables -A FORWARD -j DROP todo: prevents wg0 forwarding post boot. to fix
+
 # Save IPTables and make persistent
+echo "Saving IPTables rules and making them persistent..."
+
 sudo DEBIAN_FRONTEND=noninteractive apt-get -y install iptables-persistent
 
 # Echo into Cloud INIT Log that we the Bootstrap has finished
-echo "Sphere Bootstrap Complete - Rebooting to apply changes." 
-
-# Update kernel and reboot
+echo "Sphere Bootstrap Complete - Rebooting to apply package changes." 
 sudo reboot

@@ -150,7 +150,8 @@ resource "aws_iam_role_policy" "sphere_policy" {
       "Effect": "Allow",
       "Action": [
         "ssm:GetParameters",
-        "ssm:GetParameter"
+        "ssm:GetParameter",
+        "ssm:PutParameter"
       ],
       "Resource": [
         "arn:aws:ssm:${var.awsregion}:${var.aws_account_id}:parameter/${var.name_prefix}/*"

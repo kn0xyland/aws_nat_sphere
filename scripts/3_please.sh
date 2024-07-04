@@ -97,3 +97,9 @@ sudo systemctl enable wg-quick@wg$i.service
 sudo systemctl daemon-reload
 sudo systemctl start wg-quick@wg$i
 done
+
+## Update Iptables to allow additonal wireguard ports
+sudo iptables -D INPUT -j DROP
+sudo iptables -A INPUT -p udp -m udp --dport 51821 -j ACCEPT
+sudo iptables -A INPUT -p udp -m udp --dport 51822 -j ACCEPT
+sudo iptables -A INPUT -j DROP
