@@ -42,9 +42,16 @@ echo "Updating Kernel to allow IP Forwarding..."
 sudo echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
 sudo echo "net.ipv4.conf.all.forwarding=1" >> /etc/sysctl.conf
 
-## Install AWS CLi for ARM64 todo: check arch and then install - current ARM64
+## Install AWS CLi
 echo "Install latest AWSCLi..."
-curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
+if [[ $(uname -m) == "x86_64" ]]; then
+  curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+elif [[ $(uname -m) == "aarch64" ]]; then
+  curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
+else
+  echo "Unsupported architecture"
+  exit 1
+fi
 unzip -q awscliv2.zip
 sudo ./aws/install
 rm -rf awscliv2.zip
